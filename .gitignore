@@ -1,0 +1,6 @@
+*.mmdb
+geolite_ip_data/
+.idea/
+venv/
+__pycache__/
+*.txt
