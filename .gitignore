@@ -4,3 +4,4 @@ geolite_ip_data/
 venv/
 __pycache__/
 *.txt
+feedback.txt
