@@ -17,9 +17,14 @@ from requests import RequestException, Response
 from subprocess import TimeoutExpired, CalledProcessError
 from shlex import quote
 import os
+from OpenSSL import SSL
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
+import certifi
+from certvalidator import CertificateValidator, ValidationContext
 
 error_logs = ""
-
+HTTPS_PORT=443
 
 def run_command_and_get_result(command):
     """
@@ -182,33 +187,49 @@ def rtt_range(domain_name):
         error_logs+="RTT variance calculation failed as TCP connection from multiple ports " + domain_name + " timed out.\n"
         return None
     return [mn, mx]
+# TODO - Add modularization here instead of having all
+def get_root_ca(domain_name) -> str :
+    """
+    :param domain_name: The domain of which the root certificate authority is asked
+    :return: A string denoting the root certificate authority
+    """
+    server_certs = get_cert_chain_from_server(domain_name)
+    if not server_certs:
+        raise Exception("No certificates retrieved from server.")
 
-def get_root_ca(domain_name):
-    global error_logs
-    try:
-        openssl_sclient_output = run_command_and_get_result('echo | openssl s_client -connect ' + quote(domain_name)+ ':443')
-        root_ca_info = openssl_sclient_output.split("\n")[0]
-        suffix_containing_organization_name = re.search(r"O = .*", root_ca_info).group(0).split("O = ")[1]
-        # Iterate till a starting quotes is matched with an ending quotes OR a comma is hit
-        organization_name=""
-        open_quotes_found = False
-        for c in suffix_containing_organization_name:
-            if (c == '"' and open_quotes_found) or  (c == "," and not open_quotes_found):
-                break
-            elif c == '"' and not open_quotes_found:
-                open_quotes_found=True
-            else:
-                organization_name+=c
-        return organization_name
-    except TimeoutExpired:
-        error_logs += "Root CA cannot be determined as HTTPS connection via openssl to port 443 for " + domain_name + " timed out\n"
-        return None
-    except ValueError:
-        error_logs += "Root CA cannot be determined as parsing error occured while parsing openssl out for " + domain_name +":443.\n"
-        return None
-    except CalledProcessError:
-        error_logs += "Root CA cannot be determined as an unknown error occured with openssl\n"
-        return None
+    leaf = server_certs[0]
+    intermediates = server_certs[1:]
+
+    trust_roots = load_trust_roots()
+    context = ValidationContext(trust_roots=trust_roots, allow_fetching=True)
+    validator = CertificateValidator(leaf, intermediates, validation_context=context)
+    path = validator.validate_usage(extended_key_usage=set(['server_auth']))
+    return path.first.subject.human_friendly
+
+def get_cert_chain_from_server(domain_name, port=HTTPS_PORT) -> list[bytes]:
+    ctx = SSL.Context(SSL.TLS_CLIENT_METHOD)
+    ctx.set_verify(SSL.VERIFY_NONE, lambda *args: True)
+
+    conn = SSL.Connection(ctx, socket.socket())
+    conn.set_tlsext_host_name(domain_name.encode())
+    conn.connect((domain_name, port))
+    conn.do_handshake()
+
+    certs = conn.get_peer_cert_chain(as_cryptography=True)
+    conn.close()
+    pem_encoded_certs = []
+    for cert in certs:
+        pem_encoded_certs.append(cert.public_bytes(serialization.Encoding.PEM))
+    return pem_encoded_certs
+
+def load_trust_roots() -> list[bytes]:
+    with open(certifi.where(), 'rb') as f:
+        pem_data = f.read()
+    root_certificates = x509.load_pem_x509_certificates(pem_data)
+    pem_encoded_root_certificates = []
+    for cert in root_certificates:
+        pem_encoded_root_certificates.append(cert.public_bytes(serialization.Encoding.PEM))
+    return pem_encoded_root_certificates
 
 def reverse_dns(domain_name):
     ivp4_addresses = get_ip_addresses(domain_name, "ivp4")
