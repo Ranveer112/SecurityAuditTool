@@ -1,4 +1,4 @@
-#SecurityAuditTool
+##SecurityAuditTool
 
 ## Description
 
@@ -70,7 +70,7 @@ curl -X POST "http://localhost:8000/audit"   -H "accept: text/plain"   -H "Conte
 6) Insecure HTTP - Boolean denoting whether domain name supports HTTP calls. Considered True even when HTTP calls are redirected to HTTPs
 7) Redirect to HTTPS -  Boolean denoting whether HTTP calls are redirected to HTTPs within 10 redirects.
 8) RTT Range  - A range of decimals denoting the minimum and maximum round trip time in seconds among all IPv4 addresses and ports: (443, 80, 20) combination associated with the domain.
-9) Root CA Name - The name of Root Certificate along the chain of certificates associated with the certificate of the domain.
+9) Root CA Name - The name of Root Certificate Authority along the chain of certificates associated with the certificate of the domain.
 10) Reverse DNS - A list of reverse DNS values for each IPv4 address associated with the domain. 
 11) Geolocation of IPs - A list of geolocations associated with the IPv4 addresses associated with the domain.
 12) Domain Enforces Strict Transport - Boolean denoting whether the domain enforces browser to shift any HTTP call to HTTPS. Works by checking the presence of `hsts` header.
@@ -88,4 +88,4 @@ If you want to contribute to this project, please follow these steps:
 Specify the project's license here. For example:
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
->>>>>>> 1d1db76 (Security Audit Tool full work)
+
