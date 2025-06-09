@@ -201,6 +201,8 @@ def get_root_ca(domain_name) -> str :
     intermediates = server_certs[1:]
 
     trust_roots = load_trust_roots()
+    # TODO - opencrpyto has a bug in it's version detection
+    # We would need to download from master rather than pip because this has not been released
     context = ValidationContext(trust_roots=trust_roots, allow_fetching=True)
     validator = CertificateValidator(leaf, intermediates, validation_context=context)
     path = validator.validate_usage(extended_key_usage=set(['server_auth']))
