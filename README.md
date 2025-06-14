@@ -1,4 +1,4 @@
-##SecurityAuditTool
+## SecurityAuditTool
 
 ## Description
 
@@ -14,17 +14,25 @@ Make sure you satisfy the following:
 - Python 3.12.10 installed
 - The following Python packages:
     - `pip`
+- Modules specified in requirements.txt available to scan.py and server.py
+  - Command for installation
+  ```bash
+    pip install -r requirements.txt
+  ```
 - scan.py should run in a POSIX compliant OS with utilities such as nslookup and openssl installed.
 - Availability of MaxMind GeoLite2 City database file within a subdirectory named geolite_ip_data inside the running directory of scan.py
   - To download it manually, download it from https://dev.maxmind.com/geoip/geolite2/ using your own MaxMind license key.
   - Ensure you place the downloaded file in geolite_ip_data subdirectory inside the running directory of scan.py.
+- System level dependencies:
+This project requires a few system-level packages to function correctly. These are not installed via `pip`.
 
-You can install required packages using pip:
+Install them with:
 
 ```bash
-pip install -r requirements.txt
+sudo apt update && sudo apt install -y \
+    libssl-dev build-essential python3-dev pkg-config ca-certificates
+
 ```
-  
 
 ## Usage
 
