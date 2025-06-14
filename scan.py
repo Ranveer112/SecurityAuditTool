@@ -199,10 +199,10 @@ def rtt_range(domain_name):
     return [mn, mx]
 
 
-def get_root_ca(domain_name) -> str:
+def get_root_ca(domain_name) -> str|None:
     """
     :param domain_name: The domain of which the root certificate authority is asked
-    :return: A string denoting the root certificate authority
+    :return: A string denoting the root certificate authority. Returns None when an error occured
     """
     global error_logs
     try:
@@ -227,6 +227,12 @@ def get_root_ca(domain_name) -> str:
 
 
 def get_cert_chain_from_server(domain_name, port=HTTPS_PORT) -> list[bytes]:
+    """
+    :param domain_name: The domain_name of whom to request certificate chain from.
+    :param port: The port to use for the connection. Defaults TO HTTPS_PORT and specifying a different port
+                 comes at a risk of the domain_name rejecting the connection request
+    :return: A list of PEM encoded byte strings denoting the certificate chain obtained from the domain_name
+    """
     ctx = SSL.Context(SSL.TLS_CLIENT_METHOD)
     ctx.set_verify(SSL.VERIFY_NONE, lambda *args: True)
 
@@ -244,6 +250,10 @@ def get_cert_chain_from_server(domain_name, port=HTTPS_PORT) -> list[bytes]:
 
 
 def load_trust_roots() -> list[bytes]:
+    """
+    Returns the trusted root certificates from certifi store which is Mozilla's carefully curated collection of Root Certificates
+    :return: A list of PEM encoded byte strings denoting the root certificates obtained from the certificate store.
+    """
     with open(certifi.where(), 'rb') as f:
         pem_data = f.read()
     root_certificates = x509.load_pem_x509_certificates(pem_data)
