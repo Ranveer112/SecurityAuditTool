@@ -3,4 +3,10 @@ geolite_ip_data/
 .idea/
 venv/
 __pycache__/
-*.txt
+feedback.txt
+log.txt
+output.txt
+domain_inputs.txt
+.venv/
+GeoLite2-City_20250425/
+GeoLite2-Country_20250425/
