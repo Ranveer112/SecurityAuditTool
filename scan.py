@@ -26,88 +26,27 @@ from certvalidator import CertificateValidator, ValidationContext
 error_logs = ""
 HTTPS_PORT = 443
 
-
-def run_command_and_get_result(command):
-    """
-    Runs specified command on the shell with a timeout of 2 seconds
-
-    :param command: A string representing the shell command to be executed.
-    :return: A string representing the decoded output of the executed command.
-    :raises TimeoutExpired: If the command execution times out.
-    :raises CalledProcessError: If the command execution fails.
-    """
-    result = subprocess.check_output(command, timeout=2, stderr=subprocess.STDOUT, shell=True).decode("utf-8")
-    return result
-
-
-def get_ip_addresses(domain_name, address_format):
+def get_ip_addresses(domain_name, address_format) -> list[str]|None:
     """
     :param domain_name: The domain name for which the IP addresses need to be fetched.
     :param address_format: Specifies the IP address format to retrieve. Acceptable values are "ivp4" or "ivp6".
     :return: A list of IP addresses associated with the domain name, None in case of an error,
     """
     global error_logs
-    try:
-        if address_format == "ivp4":
-            nslookup_result = run_command_and_get_result("nslookup -type=A " + quote(domain_name))
-
-        elif address_format == "ivp6":
-            nslookup_result = run_command_and_get_result("nslookup -type=AAAA " + quote(domain_name))
-        else:
-            return None
-        return get_addresses_from_nslookup_output(nslookup_result)
-    except TimeoutExpired:
-        error_logs += "nslookup timed out while fetching IPs for " + domain_name + "\n"
+    if address_format == "ipv4" or address_format == "ipv6":
+        socket_family = socket.AF_INET if address_format == "ipv4" else socket.AF_INET6
+        for service in ('https', 'http'):
+            try:
+                address_infos = socket.getaddrinfo(domain_name, service, socket_family)
+                if len(address_infos)>0:
+                    return list(set(map(lambda address_info: address_info[4][0], address_infos)))
+            except Exception:
+                continue
+        error_logs += "No " + address_format + " can be found for " + domain_name+"\n"
         return None
-    except ValueError:
-        error_logs += "Error while parsing nslookup output for " + domain_name + " " + address_format + " IPs\n"
+    else:
+        error_logs += "get_ip_addresses is called with an incorrect address format\n"
         return None
-    except CalledProcessError:
-        error_logs += "Error while executing nslookup for " + domain_name + " " + address_format + " IPs\n"
-        return None
-
-
-def is_valid_ipaddr(address):
-    """
-    :param address: The IP address string to validate
-    :return: Returns True if the given address is a valid IP address, otherwise False
-    """
-    try:
-        ip = ipaddress.ip_address(address)
-        return True
-    except ValueError:
-        return False
-
-
-def get_addresses_from_nslookup_output(result):
-    """
-    Parses the output of the `nslookup` command and extracts all valid IP addresses.
-
-    :param result: The string output from the `nslookup` command. The string is expected to have the approximately one of the following format
-         Name: <domain_name>
-         Address:
-         <ip_address>
-         or
-         Name: <domain_name>
-         Addresses:
-         <ip_address_1>
-         <ip_address_2>
-    :return: A list of extracted IP addresses.
-    :raises ValueError: If the string does not seem to match one of the format.
-    """
-    prefix_not_having_ips, suffix_having_ips = result.split('Name:', maxsplit=1)
-    addresses = []
-    while len(suffix_having_ips) > 0:
-        current_line, suffix_having_ips = suffix_having_ips.split('\n', maxsplit=1)
-        if "Address" in current_line:
-            ip_address = re.split("Addresses:|Address:", current_line)[1].strip()
-            addresses.append(ip_address)
-            while is_valid_ipaddr(suffix_having_ips.split('\n', maxsplit=1)[0].strip()):
-                current_line, suffix_having_ips = suffix_having_ips.split('\n', maxsplit=1)
-                ip_address = current_line.strip()
-                addresses.append(ip_address)
-    return addresses
-
 
 def http_server(domain_name):
     """
@@ -171,7 +110,7 @@ def insecure_connection_redirects_to_secure(domain_name):
 
 def rtt_range(domain_name):
     # for each of ivp4 addresses, create a socket.socket
-    ivp4_addresses = get_ip_addresses(domain_name, "ivp4")
+    ivp4_addresses = get_ip_addresses(domain_name, "ipv4")
     mn = math.inf
     mx = -math.inf
     global error_logs
@@ -264,7 +203,7 @@ def load_trust_roots() -> list[bytes]:
 
 
 def reverse_dns(domain_name):
-    ivp4_addresses = get_ip_addresses(domain_name, "ivp4")
+    ivp4_addresses = get_ip_addresses(domain_name, "ipv4")
     dns_resolver_address = "1.1.1.1"
     global error_logs
     for ivp4_address in ivp4_addresses:
@@ -280,7 +219,7 @@ def reverse_dns(domain_name):
 
 def get_geolocation_of_ips(domain_name):
     global error_logs
-    ivp4_addresses = get_ip_addresses(domain_name, "ivp4")
+    ivp4_addresses = get_ip_addresses(domain_name, "ipv4")
     geolocations = set()
     with geoip2.database.Reader('./geolite_ip_data/GeoLite2-City.mmdb') as reader:
         for ivp4_address in ivp4_addresses:
@@ -316,8 +255,8 @@ def domain_enforces_strict_transport(domain_name):
 def get_domain_security_stats(domain_name):
     return {
         "scan_time": int(time.time()),
-        "ipv4_addresses": get_ip_addresses(domain_name, "ivp4"),
-        "ivp6_addresses": get_ip_addresses(domain_name, "ivp6"),
+        "ipv4_addresses": get_ip_addresses(domain_name, "ipv4"),
+        "ivp6_addresses": get_ip_addresses(domain_name, "ipv6"),
         "http_server": http_server(domain_name),
         "insecure_http": listens_for_insecure_connections(domain_name),
         "redirect_to_https": insecure_connection_redirects_to_secure(domain_name),
