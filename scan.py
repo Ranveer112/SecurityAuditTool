@@ -26,13 +26,15 @@ DEFAULT_LOGGING_FILE = "log.txt"
 DEFAULT_LOGGING_LEVEL = logging.ERROR
 
 
-class SessionLoggerAdapter(logging.LoggerAdapter):
+class ContextLoggerAdapter(logging.LoggerAdapter):
     def process(self, msg, kwargs):
-        return f"[Session: {self.extra['session_id']}] {msg}", kwargs
-    def get_child(self, suffix):
-        """Create child SessionLoggerAdapter with same session context"""
+        context_stringified = str({k: v() if callable(v) else v for k, v in self.extra.items()})
+        return f"[" +context_stringified + "] {"+msg+"}", kwargs
+    def get_child(self, suffix, additional_context):
+        """Create child ContextLoggerAdapter with same context as parent but with additional context"""
         child_logger = logging.getLogger(f"{self.logger.name}.{suffix}")
-        return SessionLoggerAdapter(child_logger, self.extra.copy())
+        parent_logger_adapter_context = self.extra.copy()
+        return ContextLoggerAdapter(child_logger, parent_logger_adapter_context|additional_context)
 
 
 def get_ip_addresses(domain_name, address_format, logger) -> list[str]|None:
@@ -41,7 +43,7 @@ def get_ip_addresses(domain_name, address_format, logger) -> list[str]|None:
     :param address_format: Specifies the IP address format to retrieve. Acceptable values are "ivp4" or "ivp6".
     :return: A list of IP addresses associated with the domain name, None in case of an error,
     """
-    func_logger = logger.get_child("get_ip_addresses")
+    func_logger = logger.get_child("get_ip_addresses", {'domain_name': domain_name})
     if address_format == "ipv4" or address_format == "ipv6":
         socket_family = socket.AF_INET if address_format == "ipv4" else socket.AF_INET6
         for service in ('https', 'http'):
@@ -66,7 +68,7 @@ def http_server(domain_name, logger):
         response = requests.request("GET", "https://" + domain_name, timeout=2)
         return response.headers["server"] if "server" in response.headers else None
     except RequestException:
-        func_logger = logger.get_child("http_server")
+        func_logger = logger.get_child("http_server", {'domain_name': domain_name})
         func_logger.warning("Unable to make a HTTPS GET request to " + domain_name + " for determining it's server")
         return None
 
@@ -80,7 +82,7 @@ def listens_for_insecure_connections(domain_name, logger):
         response = requests.request("GET", "http://" + domain_name, timeout=2)
         return response.ok
     except RequestException:
-        func_logger = logger.get_child("listens_for_insecure_connections")
+        func_logger = logger.get_child("listens_for_insecure_connections", {'domain_name': domain_name})
         func_logger.warning("Unable to make a HTTP GET request to " + domain_name + " for determining whether it listens for insecure requests")
         return None
 
@@ -108,7 +110,7 @@ def insecure_connection_redirects_to_secure(domain_name, logger):
                 return False
         return False
     except RequestException:
-        func_logger = logger.get_child("insecure_connection_redirects_to_secure")
+        func_logger = logger.get_child("insecure_connection_redirects_to_secure", {'domain_name': domain_name})
         if isinstance(response, Response):
             func_logger.warning("Unable to make a HTTP GET request to " + response.headers[
                 "Location"] + " for determining whether it listens for insecure requests")
@@ -119,7 +121,7 @@ def insecure_connection_redirects_to_secure(domain_name, logger):
 
 def rtt_range(domain_name, logger):
     # for each of ivp4 addresses, create a socket.socket
-    func_logger = logger.get_child("rtt_range")
+    func_logger = logger.get_child("rtt_range", {'domain_name': domain_name})
     ipv4_addresses = get_ip_addresses(domain_name, "ipv4", func_logger)
     ipv6_addresses = get_ip_addresses(domain_name, "ipv6", func_logger)
     ip_addresses = (ipv4_addresses if ipv4_addresses is not None else []) + (ipv6_addresses if ipv6_addresses is not None else [])
@@ -164,7 +166,7 @@ def get_root_ca(domain_name, logger) -> str|None:
     :param domain_name: The domain of which the root certificate authority is asked
     :return: A string denoting the root certificate authority. Returns None when an error occured
     """
-    func_logger = logger.get_child("get_root_ca")
+    func_logger = logger.get_child("get_root_ca", {'domain_name': domain_name})
     try:
         server_certs = get_cert_chain_from_server(domain_name)
         if not server_certs:
@@ -225,7 +227,7 @@ def load_trust_roots() -> list[bytes]:
 
 
 def reverse_dns(domain_name, logger):
-    func_logger = logger.get_child("reverse_dns")
+    func_logger = logger.get_child("reverse_dns", {'domain_name': domain_name})
     ivp4_addresses = get_ip_addresses(domain_name, "ipv4", func_logger)
     dns_resolver_address = "1.1.1.1"
     for ivp4_address in ivp4_addresses:
@@ -240,7 +242,7 @@ def reverse_dns(domain_name, logger):
 
 
 def get_geolocation_of_ips(domain_name, logger):
-    func_logger = logger.get_child("get_geolocation_of_ips")
+    func_logger = logger.get_child("get_geolocation_of_ips", {'domain_name': domain_name})
     ivp4_addresses = get_ip_addresses(domain_name, "ipv4", func_logger)
     geolocations = set()
     with geoip2.database.Reader('./geolite_ip_data/GeoLite2-City.mmdb') as reader:
@@ -262,7 +264,7 @@ def get_geolocation_of_ips(domain_name, logger):
 
 
 def domain_enforces_strict_transport(domain_name, logger):
-    func_logger = logger.get_child("domain_enforces_strict_transport")
+    func_logger = logger.get_child("domain_enforces_strict_transport", {'domain_name': domain_name})
     try:
         response = requests.request("GET", "https://" + domain_name, timeout=2)
         if "hsts" in response.headers:
@@ -340,7 +342,7 @@ def generate_security_report_text(domain_file_content, logger):
         domain_stats[domain_name] = get_domain_security_stats(domain_name, logger)
     return create_report_text(domain_stats)
 
-def get_logger(output_log_location=DEFAULT_LOGGING_FILE, log_level=DEFAULT_LOGGING_LEVEL)->SessionLoggerAdapter:
+def get_logger(output_log_location=DEFAULT_LOGGING_FILE, log_level=DEFAULT_LOGGING_LEVEL)->ContextLoggerAdapter:
     logger = logging.getLogger(__name__)
     logger.setLevel(log_level)
     info_formatter = logging.Formatter(
@@ -353,7 +355,7 @@ def get_logger(output_log_location=DEFAULT_LOGGING_FILE, log_level=DEFAULT_LOGGI
         log_handler.setFormatter(info_formatter)
         logger.addHandler(log_handler)
 
-    return SessionLoggerAdapter(logger, {'session_id': str(uuid.uuid4())})
+    return ContextLoggerAdapter(logger, {'scan_time' : lambda: time.ctime()})
 
 
 def output_domain_stats_command_line_mode():
