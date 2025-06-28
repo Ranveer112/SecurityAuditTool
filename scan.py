@@ -243,7 +243,6 @@ def get_geolocation_of_ips(domain_name, logger):
     func_logger = logger.get_child("get_geolocation_of_ips")
     ivp4_addresses = get_ip_addresses(domain_name, "ipv4", func_logger)
     geolocations = set()
-    func_logger = logging.getLogger(f"{__name__}.get_geolocation_of_ips")
     with geoip2.database.Reader('./geolite_ip_data/GeoLite2-City.mmdb') as reader:
         for ivp4_address in ivp4_addresses:
             try:
