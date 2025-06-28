@@ -3,9 +3,6 @@ import ipaddress
 import shutil
 import socket
 import time
-import subprocess
-import re
-
 import dns.resolver
 import dns.rdatatype
 import geoip2.database
@@ -14,25 +11,37 @@ import math
 import requests
 import texttable
 from requests import RequestException, Response
-from subprocess import TimeoutExpired, CalledProcessError
-from shlex import quote
 import os
 from OpenSSL import SSL
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 import certifi
 from certvalidator import CertificateValidator, ValidationContext
+import logging
+import uuid
 
-error_logs = ""
+
 HTTPS_PORT = 443
+DEFAULT_LOGGING_FILE = "log.txt"
+DEFAULT_LOGGING_LEVEL = logging.ERROR
 
-def get_ip_addresses(domain_name, address_format) -> list[str]|None:
+
+class SessionLoggerAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return f"[Session: {self.extra['session_id']}] {msg}", kwargs
+    def get_child(self, suffix):
+        """Create child SessionLoggerAdapter with same session context"""
+        child_logger = logging.getLogger(f"{self.logger.name}.{suffix}")
+        return SessionLoggerAdapter(child_logger, self.extra.copy())
+
+
+def get_ip_addresses(domain_name, address_format, logger) -> list[str]|None:
     """
     :param domain_name: The domain name for which the IP addresses need to be fetched.
     :param address_format: Specifies the IP address format to retrieve. Acceptable values are "ivp4" or "ivp6".
     :return: A list of IP addresses associated with the domain name, None in case of an error,
     """
-    global error_logs
+    func_logger = logger.get_child("get_ip_addresses")
     if address_format == "ipv4" or address_format == "ipv6":
         socket_family = socket.AF_INET if address_format == "ipv4" else socket.AF_INET6
         for service in ('https', 'http'):
@@ -42,13 +51,13 @@ def get_ip_addresses(domain_name, address_format) -> list[str]|None:
                     return list(set(map(lambda address_info: address_info[4][0], address_infos)))
             except Exception:
                 continue
-        error_logs += "No " + address_format + " can be found for " + domain_name+"\n"
+        func_logger.warning("No " + address_format + " can be found for " + domain_name)
         return None
     else:
-        error_logs += "get_ip_addresses is called with an incorrect address format\n"
+        func_logger.error("get_ip_addresses is called with an incorrect address format")
         return None
 
-def http_server(domain_name):
+def http_server(domain_name, logger):
     """
     :param domain_name: The domain name of the server to query.
     :return: The server type obtained from the "server" header of the HTTPS response, or None if the header is not present or an error occurs.
@@ -57,12 +66,12 @@ def http_server(domain_name):
         response = requests.request("GET", "https://" + domain_name, timeout=2)
         return response.headers["server"] if "server" in response.headers else None
     except RequestException:
-        global error_logs
-        error_logs += "Unable to make a HTTPS GET request to " + domain_name + " for determining it's server\n"
+        func_logger = logger.get_child("http_server")
+        func_logger.warning("Unable to make a HTTPS GET request to " + domain_name + " for determining it's server")
         return None
 
 
-def listens_for_insecure_connections(domain_name):
+def listens_for_insecure_connections(domain_name, logger):
     """
     :param domain_name: The domain name to check whether it listens for insecure HTTP connections.
     :return: True if the domain listens for insecure connections and the HTTP request is successful; False if the http request is unsuccesful; None if an exception occurs during the request.
@@ -71,12 +80,12 @@ def listens_for_insecure_connections(domain_name):
         response = requests.request("GET", "http://" + domain_name, timeout=2)
         return response.ok
     except RequestException:
-        global error_logs
-        error_logs += "Unable to make a HTTP GET request to " + domain_name + " for determining whether it listens for insecure requests\n"
+        func_logger = logger.get_child("listens_for_insecure_connections")
+        func_logger.warning("Unable to make a HTTP GET request to " + domain_name + " for determining whether it listens for insecure requests")
         return None
 
 
-def insecure_connection_redirects_to_secure(domain_name):
+def insecure_connection_redirects_to_secure(domain_name, logger):
     """
     :param domain_name: The domain name to be checked for insecure HTTP redirects to secure HTTPS
     :return:
@@ -99,29 +108,32 @@ def insecure_connection_redirects_to_secure(domain_name):
                 return False
         return False
     except RequestException:
-        global error_logs
+        func_logger = logger.get_child("insecure_connection_redirects_to_secure")
         if isinstance(response, Response):
-            error_logs += "Unable to make a HTTP GET request to " + response.headers[
-                "Location"] + " for determining whether it listens for insecure requests\n"
+            func_logger.warning("Unable to make a HTTP GET request to " + response.headers[
+                "Location"] + " for determining whether it listens for insecure requests")
         else:
-            error_logs += "Unable to make a HTTP GET request to " + domain_name + " for determining whether it listens for insecure requests\n"
+            func_logger.warning("Unable to make a HTTP GET request to " + domain_name + " for determining whether it listens for insecure requests")
         return None
 
 
-def rtt_range(domain_name):
+def rtt_range(domain_name, logger):
     # for each of ivp4 addresses, create a socket.socket
-    ivp4_addresses = get_ip_addresses(domain_name, "ipv4")
+    func_logger = logger.get_child("rtt_range")
+    ipv4_addresses = get_ip_addresses(domain_name, "ipv4", func_logger)
+    ipv6_addresses = get_ip_addresses(domain_name, "ipv6", func_logger)
+    ip_addresses = (ipv4_addresses if ipv4_addresses is not None else []) + (ipv6_addresses if ipv6_addresses is not None else [])
     mn = math.inf
     mx = -math.inf
-    global error_logs
-    if ivp4_addresses is not None:
-        for ivp4_address in ivp4_addresses:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if len(ip_addresses)>0:
+        for ip_address in ip_addresses:
+            socket_family = socket.AF_INET if ip_address in ipv4_addresses else socket.AF_INET6
+            sock = socket.socket(socket_family, socket.SOCK_STREAM)
             # Try an HTTPS port, then a HTTP port, and then a FTP port
             for port in (443, 80, 20):
                 try:
                     before = time.time()
-                    sock.connect((ivp4_address, port))
+                    sock.connect((ip_address, port))
                     rtt = time.time() - before
                     mn = min(rtt, mn)
                     mx = max(rtt, mx)
@@ -129,39 +141,49 @@ def rtt_range(domain_name):
                     sock.close()
                     break
                 except TimeoutError:
-                    error_logs += "TCP connection request for rtt calculation timed out for " + domain_name + " on port:" + str(
-                        port) + " " + "timed out.\n"
+                    func_logger.warning("TCP connection request for rtt calculation timed out for " + domain_name + " on port:" + str(
+                        port) + " " + "timed out.")
                     continue
-    if mn == math.inf and mx == -math.inf:
-        error_logs += "RTT variance calculation failed as TCP connection from multiple ports " + domain_name + " timed out.\n"
+                except Exception as e:
+                    func_logger.warning(
+                        "TCP connection request for rtt calculation timed out for " + domain_name + "'s IP: " + ip_address +" on port:" + str(
+                            port) + " " + "timed out.")
+                    continue
+
+        if mn == math.inf and mx == -math.inf:
+            func_logger.error("RTT variance calculation failed as TCP connection from multiple ports " + domain_name + " timed out")
+            return None
+        else:
+            return [mn, mx]
+    else:
+        func_logger.error("RTT variance for "+domain_name + " cannot be calculated since no the IP resolution for domain name failed")
         return None
-    return [mn, mx]
 
-
-def get_root_ca(domain_name) -> str|None:
+def get_root_ca(domain_name, logger) -> str|None:
     """
     :param domain_name: The domain of which the root certificate authority is asked
     :return: A string denoting the root certificate authority. Returns None when an error occured
     """
-    global error_logs
+    func_logger = logger.get_child("get_root_ca")
     try:
         server_certs = get_cert_chain_from_server(domain_name)
         if not server_certs:
-            raise Exception("No certificates retrieved from server.")
-
+            func_logger.error("No certificates retrieved from server.")
+            return None
         leaf = server_certs[0]
         intermediates = server_certs[1:]
 
         trust_roots = load_trust_roots()
         if not trust_roots:
-            raise Exception("Error loading root certificates")
+            func_logger.error("Error loading root certificates")
+            return None
         # TODO-allow_fetching:False is less secure since we would not check whether is certificate has been revoked
         context = ValidationContext(trust_roots=trust_roots, allow_fetching=False)
         validator = CertificateValidator(leaf, intermediates, validation_context=context)
         path = validator.validate_usage(key_usage=set(), extended_key_usage=set(['server_auth']))
         return path.first.subject.human_friendly
     except Exception as e:
-        error_logs += "Something went wrong while getting root certificate authority for " + domain_name
+        func_logger.error("Something went wrong while getting root certificate authority for " + domain_name)
         return None
 
 
@@ -202,25 +224,26 @@ def load_trust_roots() -> list[bytes]:
     return pem_encoded_root_certificates
 
 
-def reverse_dns(domain_name):
-    ivp4_addresses = get_ip_addresses(domain_name, "ipv4")
+def reverse_dns(domain_name, logger):
+    func_logger = logger.get_child("reverse_dns")
+    ivp4_addresses = get_ip_addresses(domain_name, "ipv4", func_logger)
     dns_resolver_address = "1.1.1.1"
-    global error_logs
     for ivp4_address in ivp4_addresses:
         try:
             responses = dns.resolver.resolve_at(dns_resolver_address,
                                                 ipaddress.ip_address(ivp4_address).reverse_pointer, dns.rdatatype.PTR)
             return list(map(lambda response: response.target.to_unicode(), responses))
         except Exception as e:
-            error_logs += "While finding reverse dns entries for " + domain_name + " ip:" + ivp4_address + ", the following error was hit:" + str(
-                e) + "\n"
+            func_logger.error( "While finding reverse dns entries for " + domain_name + " ip:" + ivp4_address + ", the following error was hit:" + str(
+                e))
             return None
 
 
-def get_geolocation_of_ips(domain_name):
-    global error_logs
-    ivp4_addresses = get_ip_addresses(domain_name, "ipv4")
+def get_geolocation_of_ips(domain_name, logger):
+    func_logger = logger.get_child("get_geolocation_of_ips")
+    ivp4_addresses = get_ip_addresses(domain_name, "ipv4", func_logger)
     geolocations = set()
+    func_logger = logging.getLogger(f"{__name__}.get_geolocation_of_ips")
     with geoip2.database.Reader('./geolite_ip_data/GeoLite2-City.mmdb') as reader:
         for ivp4_address in ivp4_addresses:
             try:
@@ -233,13 +256,14 @@ def get_geolocation_of_ips(domain_name):
                     geolocations.add(response.country.name)
 
             except geoip2.errors.AddressNotFoundError:
-                error_logs += "Geolocation for IP " + ivp4_address + " not found in database.\n"
+                func_logger.warning("Geolocation for IP " + ivp4_address + " not found in database.")
             except maxminddb.InvalidDatabaseError:
-                error_logs += "Database file for geolocation is corrupted.\n"
+                func_logger.error("Database file for geolocation is corrupted")
     return list(geolocations)
 
 
-def domain_enforces_strict_transport(domain_name):
+def domain_enforces_strict_transport(domain_name, logger):
+    func_logger = logger.get_child("domain_enforces_strict_transport")
     try:
         response = requests.request("GET", "https://" + domain_name, timeout=2)
         if "hsts" in response.headers:
@@ -247,24 +271,23 @@ def domain_enforces_strict_transport(domain_name):
         else:
             return False
     except RequestException:
-        global error_logs
-        error_logs += "Unable to make a HTTPS GET request to " + domain_name + " for determining hsts header\n"
+        func_logger.warning("Unable to make a HTTPS GET request to " + domain_name + " for determining hsts header")
         return None
 
 
-def get_domain_security_stats(domain_name):
+def get_domain_security_stats(domain_name, logger):
     return {
         "scan_time": int(time.time()),
-        "ipv4_addresses": get_ip_addresses(domain_name, "ipv4"),
-        "ivp6_addresses": get_ip_addresses(domain_name, "ipv6"),
-        "http_server": http_server(domain_name),
-        "insecure_http": listens_for_insecure_connections(domain_name),
-        "redirect_to_https": insecure_connection_redirects_to_secure(domain_name),
-        "rtt_range": rtt_range(domain_name),
-        "root_ca_name": get_root_ca(domain_name),
-        "rdns": reverse_dns(domain_name),
-        "geolocation_of_ips": get_geolocation_of_ips(domain_name),
-        "domain_enforces_strict_transport": domain_enforces_strict_transport(domain_name),
+        "ipv4_addresses": get_ip_addresses(domain_name, "ipv4", logger),
+        "ivp6_addresses": get_ip_addresses(domain_name, "ipv6", logger),
+        "http_server": http_server(domain_name, logger),
+        "insecure_http": listens_for_insecure_connections(domain_name, logger),
+        "redirect_to_https": insecure_connection_redirects_to_secure(domain_name, logger),
+        "rtt_range": rtt_range(domain_name, logger),
+        "root_ca_name": get_root_ca(domain_name, logger),
+        "rdns": reverse_dns(domain_name, logger),
+        "geolocation_of_ips": get_geolocation_of_ips(domain_name, logger),
+        "domain_enforces_strict_transport": domain_enforces_strict_transport(domain_name, logger),
     }
 
 
@@ -306,7 +329,7 @@ def create_report_text(domain_security_stats):
     return table.draw()
 
 
-def generate_security_report_text(domain_file_content):
+def generate_security_report_text(domain_file_content, logger):
     domain_names = []
     for line in domain_file_content.splitlines():
         line_trimmed = line.rstrip()
@@ -315,28 +338,48 @@ def generate_security_report_text(domain_file_content):
 
     domain_stats = dict()
     for domain_name in domain_names:
-        domain_stats[domain_name] = get_domain_security_stats(domain_name)
+        domain_stats[domain_name] = get_domain_security_stats(domain_name, logger)
     return create_report_text(domain_stats)
 
+def get_logger(output_log_location=DEFAULT_LOGGING_FILE, log_level=DEFAULT_LOGGING_LEVEL)->SessionLoggerAdapter:
+    logger = logging.getLogger(__name__)
+    logger.setLevel(log_level)
+    info_formatter = logging.Formatter(
+        '%(name)s - %(levelname)s - %(message)s'
+    )
 
-def go():
+    if output_log_location is not None:
+        log_handler = logging.FileHandler(output_log_location)
+        log_handler.setLevel(log_level)
+        log_handler.setFormatter(info_formatter)
+        logger.addHandler(log_handler)
+
+    return SessionLoggerAdapter(logger, {'session_id': str(uuid.uuid4())})
+
+
+def output_domain_stats_command_line_mode():
     parser = argparse.ArgumentParser()
     # Input file format is one domain per line, where each line is seperated by a newline
     parser.add_argument("input_file")
     parser.add_argument("output_file")
-    parser.add_argument("--error-log", help="Path to the error log file", required=False)
+    parser.add_argument("--output-log", type=str, help="Path to the error log file", required=False)
+    log_level_name_to_level = logging.getLevelNamesMapping()
+    log_level_names = list(log_level_name_to_level.keys())
+    parser.add_argument("--log-level", type=str, choices = log_level_names, help="Logging level. Everything above or equal to the level will be logged", required=False)
     args = parser.parse_args()
+    if args.log_level:
+        log_level = log_level_name_to_level[args.log_level]
+        logger = get_logger(args.output_log, log_level)
+    else:
+        logger = get_logger(args.output_log)
+
     with open(args.input_file, "r", newline=None, encoding="utf-8", closefd=True, opener=None) as input_file:
         with open(args.output_file, "w", newline=None, encoding="utf-8", closefd=True, opener=None) as output_file:
-            output_file.write(generate_security_report_text(input_file.read(-1)))
-    # If error-log flag is set, dump error log in a log file
+            output_file.write(generate_security_report_text(input_file.read(-1), logger))
 
-    global error_logs
-    if args.error_log:
-        with open(args.error_log, "w", newline=None, encoding="utf-8", closefd=True, opener=None) as error_log_file:
-            if error_logs.strip():
-                error_log_file.write(error_logs)
-
+def output_domain_stats_module_mode(domain_file_content):
+    logger = get_logger(DEFAULT_LOGGING_FILE, DEFAULT_LOGGING_LEVEL)
+    return generate_security_report_text(domain_file_content, logger)
 
 if os.name != "posix":
     raise Exception("scan.py does not support non-posix operating systems")
@@ -350,4 +393,4 @@ if len(missing_commands) > 0:
     raise Exception("Missing command(s) ".join(missing_commands))
 
 if __name__ == "__main__":
-    go()
+    output_domain_stats_command_line_mode()
