@@ -6,7 +6,16 @@ __pycache__/
 feedback.txt
 log.txt
 output.txt
-domain_inputs.txt
+src/domains_scanner/domain_inputs.txt
 .venv/
 GeoLite2-City_20250425/
 GeoLite2-Country_20250425/
+*.egg-info/
+build/
+domain_scanner_log.txt
+domains-scanner.spec
+domain_inputs.txt
+domain-scanner.spec
+requirements.txt
+domain-scanner.spec
+domains_scanner_log.txt

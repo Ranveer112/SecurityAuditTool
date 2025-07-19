@@ -1,99 +1,155 @@
-## SecurityAuditTool
+# SecurityAuditTool
 
 ## Description
 
-This project consists of two main Python scripts: `scan.py` and `server.py`. Below is an overview of their purposes:
+SecurityAuditTool is a domain security assessment utility that supports both command-line and API-based usage. It performs DNS resolution, RTT checks, HTTPS analysis, certificate chain inspection, reverse DNS, and geolocation checks across multiple domains.
 
-- **scan.py**: A program with a CLI and a module interface that can accept a list of domain names and reports security stats associated with the domains.
-- **server.py**: A FastAPI server with a single POST API call /auditFile that takes a list of domain names and returns back a file with a table of security stats associated with the domains.
+### Components
 
-## Requirement
+- **`dist/domain-scan`**: A self-contained executable CLI scanner built via PyInstaller. No Python install required.
+- **`src/domains_scanner/`**: Modular Python package containing all domain scanning logic, now cleanly split into class-based modules like `certificate_checker.py`, `dns_checker.py`, `rtt_checker.py`, etc.
+- **`src/api/server.py`**: A FastAPI server that exposes a `/audit` POST API for domain scanning.
+- **`src/iacs_scanner/`**: ⚠️ *Work in progress* — will enable security scanning of Infrastructure-as-Code files (e.g., Terraform, Kubernetes manifests).
 
-Make sure you satisfy the following:
+---
 
-- Python 3.12.10 installed
-- The following Python packages:
-    - `pip`
-- Modules specified in requirements.txt available to scan.py and server.py
-  - Command for installation
-  ```bash
-    pip install -r requirements.txt
-  ```
-- scan.py should run in a POSIX compliant OS with utilities such as nslookup and openssl installed.
-- Availability of MaxMind GeoLite2 City database file within a subdirectory named geolite_ip_data inside the running directory of scan.py
-  - To download it manually, download it from https://dev.maxmind.com/geoip/geolite2/ using your own MaxMind license key.
-  - Ensure you place the downloaded file in geolite_ip_data subdirectory inside the running directory of scan.py.
-- System level dependencies:
-This project requires a few system-level packages to function correctly. These are not installed via `pip`.
+## Getting Started
 
-Install them with:
+### ✅ Easiest Way (recommended)
+
+Use the bundled executable built via PyInstaller:
 
 ```bash
-sudo apt update && sudo apt install -y \
-    libssl-dev build-essential python3-dev pkg-config ca-certificates
+./dist/domain-scan input_file.txt output_file.txt --output-log log.txt --log-level {DEBUG, INFO, WARNING, ERROR, CRITICAL}
+``` 
+> The executable should be self-contained and portable for Unix based systems.
 
+---
+
+### 🐍 Python Developer Setup
+
+#### 1. Requirements
+
+- Python 3.12.10
+- pip/poetry/hatch/pdm
+
+#### 2. Install dependencies
+
+Using pip (modern versions, PEP 517/518 compatible):
+```bash
+pip install -e .  # For development/editable install(For example - if you are constantly modifying the code and do not want to reinstall every time)
+pip install .     # For regular installation
 ```
+Using poetry:
+```bash
+poetry install     # Install all dependencies
+```
+Using Hatch:
+```bash
+hatch env create
+hatch shell
+```
+Using PDM:
+```bash
+pdm install
+```
+
+#### 3. GeoLite2 Setup
+
+Set the MaxMind license key via environment variable. The database will be downloaded automatically on first run.
+
+```bash
+export MAXMIND_LICENSE_KEY=your_key_here
+```
+
+Or on Windows:
+
+```powershell
+$env:MAXMIND_LICENSE_KEY="your_key_here"
+```
+
+---
 
 ## Usage
 
-### scan.py
 
-To scan domain names specified in an input_file.txt and output their security stats in an output_file.txt, run the following command:
+Output-log flag is optional, however, if passed, the log level flag can be used to control the log level. If log level is not passed, INFO will be used by default.
 
-```bash
-python scan.py input_file.txt output_file.txt
-```
-
-If you want to turn on logging, pass an `--error-log` flag followed by the name of the file on which to output error log. 
-For example -
+### 🔹 CLI (via Python)
 
 ```bash
-python scan.py input_file.txt output_file.txt --error-log log.txt
+python src/domains_scanner/scan.py input_file.txt output_file.txt --output-log log.txt --log-level {DEBUG, INFO, WARNING, ERROR, CRITICAL}
 ```
-#### Caveat
 
-1) All the files specified in the command should reside in the same directory as scan.py.
-
-### server.py
-
-You can also choose to just host server.py instead by running the following command
+### 🔹 CLI (via PyInstaller binary)
 
 ```bash
-uvicorn server:app --reload
+./dist/domain-scan input_file.txt output_file.txt --output-log log.txt --log-level {DEBUG, INFO, WARNING, ERROR, CRITICAL}
 ```
-Assuming above is successful, POST requests to URL `/audit` with the file consisting of domain names to scan should return a text/plain content 
-file of the report as illustrated by an example request by `curl` below
+
+### 🔹 Server API
+
+Run:
 
 ```bash
-curl -X POST "http://localhost:8000/audit"   -H "accept: text/plain"   -H "Content-Type: multipart/form-data"   -F "file=@domain_inputs.txt" --output report.txt
+uvicorn src.api.server:app --reload
 ```
 
-## Security stats reported
+Then call:
 
-1) Domain Name - Name of domain scanned
-2) Scan Time - Unix Epoch time at the moment of scan of that domain.
-3) IPv4 Addresses - IPv4 addresses associated with the domain.
-4) IPv6 Addresses  - IPv6 addresses associated with the domain.
-5) HTTP Server  - Name of HTTP server of one of the IPs associated with the domain.
-6) Insecure HTTP - Boolean denoting whether domain name supports HTTP calls. Considered True even when HTTP calls are redirected to HTTPs
-7) Redirect to HTTPS -  Boolean denoting whether HTTP calls are redirected to HTTPs within 10 redirects.
-8) RTT Range  - A range of decimals denoting the minimum and maximum round trip time in seconds among all IPv4 addresses and ports: (443, 80, 20) combination associated with the domain.
-9) Root CA Name - The name of Root Certificate Authority along the chain of certificates associated with the certificate of the domain.
-10) Reverse DNS - A list of reverse DNS values for each IPv4 address associated with the domain. 
-11) Geolocation of IPs - A list of geolocations associated with the IPv4 addresses associated with the domain.
-12) Domain Enforces Strict Transport - Boolean denoting whether the domain enforces browser to shift any HTTP call to HTTPS. Works by checking the presence of `hsts` header.
+```bash
+curl -X POST "http://localhost:8000/audit" \
+  -H "accept: text/plain" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@domain_inputs.txt" \
+  --output report.txt
+```
+
+---
+
+## Security Stats Reported
+
+| Field                         | Description                                                                 |
+|------------------------------|-----------------------------------------------------------------------------|
+| **Domain Name**              | Name of domain scanned                                                      |
+| **Scan Time**                | Unix Epoch timestamp at scan start                                          |
+| **IPv4 / IPv6 Addresses**    | Resolved IP addresses                                                       |
+| **HTTP Server**              | HTTP server type (from headers)                                             |
+| **Insecure HTTP**            | Whether the domain supports HTTP (even if redirected)                       |
+| **Redirect to HTTPS**        | Whether HTTP redirects to HTTPS within 10 hops                              |
+| **RTT Range**                | Min/Max round-trip times for ports 443, 80, and 20                          |
+| **Root CA Name**             | Certificate Authority for HTTPS cert                                        |
+| **Reverse DNS**              | PTR records for IPv4 addresses                                              |
+| **Geolocation of IPs**       | Location metadata via GeoLite2                                              |
+| **Domain Enforces HSTS**     | Checks for HSTS (Strict Transport Security) via HTTPS headers              |
+
+---
+
+## Project Structure
+
+```
+project-root/
+├── dist/                         # PyInstaller binary (domain-scan)
+├── src/
+│   ├── domains_scanner/         # Domain scanner package (modular classes)
+│   ├── api/                     # FastAPI server
+│   └── iacs_scanner/            # Infra-as-Code scanner (WIP)
+├── geolite_ip_data/             # GeoLite2 database (auto-downloaded)
+├── requirements.txt
+├── pyproject.toml
+└── README.md
+```
+
+---
 
 ## Contributing
 
-If you want to contribute to this project, please follow these steps:
+1. Fork the repository
+2. Create a feature branch
+3. Submit a pull request
 
-1. Fork the repository.
-2. Create a new branch for your changes.
-3. Submit a pull request.
+---
 
 ## License
 
-Specify the project's license here. For example:
-
-This project is licensed under the MIT License. See the `LICENSE` file for details.
-
+This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.
