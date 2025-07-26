@@ -9,7 +9,7 @@ import socket
 def test_get_ip_addresses_erroneous_address_format():
     logger = DummyLogger()
     ips = get_ip_addresses("?", "ipv5", logger)
-    assert ips is None
+    assert len(ips) == 0
     assert "get_ip_addresses is called with an incorrect address format" in logger.error_messages[0]
 
 def test_get_ip_addresses_ipv4():
@@ -64,5 +64,5 @@ def test_get_ip_addresses_no_ips_found():
         
         ips = get_ip_addresses("nonexistent.example.com", "ipv4", logger)
         
-        assert ips is None
+        assert len(ips) == 0
         assert "No ipv4 can be found for nonexistent.example.com" in logger.warning_messages[0]
