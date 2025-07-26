@@ -15,3 +15,9 @@ class DummyLogger(ContextLoggerAdapter):
         self.warning_messages.append(args)
     def info(self, *args, **kwargs):
         self.info_messages.append(args)
+    
+    def __repr__(self):
+        return (f"<DummyLogger "
+                f"errors={self.error_messages}, "
+                f"warnings={self.warning_messages}, "
+                f"info={self.info_messages}>")
