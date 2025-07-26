@@ -6,7 +6,7 @@ def get_ip_addresses(domain_name, address_format, logger:ContextLoggerAdapter) -
     """
     :param domain_name: The domain name for which the IP addresses need to be fetched.
     :param address_format: Specifies the IP address format to retrieve. Acceptable values are "ivp4" or "ivp6".
-    :return: A list of IP addresses associated with the domain name, None in case of an error,
+    :return: A list of IP addresses associated with the domain name
     """
     func_logger = logger.get_child("get_ip_addresses", {'domain_name': domain_name})
     if address_format == "ipv4" or address_format == "ipv6":
@@ -19,7 +19,7 @@ def get_ip_addresses(domain_name, address_format, logger:ContextLoggerAdapter) -
             except Exception:
                 continue
         func_logger.warning("No " + address_format + " can be found for " + domain_name)
-        return None
+        return []
     else:
         func_logger.error("get_ip_addresses is called with an incorrect address format")
-        return None
+        return []
