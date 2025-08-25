@@ -1,0 +1,35 @@
+[project]
+name = "security-scanners"
+version = "0.1.0"
+description = "Modular security scanning tools"
+authors = [{ name = "Ranveer"}]
+dependencies = [
+    "oscrypto @ git+https://github.com/wbond/oscrypto.git@1547f535001ba568b239b8797465536759c742a3",
+    "certifi==2025.4.26",
+    "certvalidator==0.11.1",
+    "cryptography==45.0.3",
+    "dnspython==2.7.0",
+    "fastapi==0.115.12",
+    "geoip2==5.0.1",
+    "maxminddb==2.6.3",
+    "pyOpenSSL==25.1.0",
+    "Requests==2.32.3",
+    "texttable==1.7.0"
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0"
+]
+
+packages = ["domains_scanner", "iacs_scanner", "utils"]
+
+[project.scripts]
+domains-scanner = "domains_scanner.scan:main"
