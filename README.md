@@ -65,11 +65,6 @@ Use the bundled executable built via PyInstaller(available within `dist` directo
 
 Using pip (modern versions, PEP 517/518 compatible):
 
-To install all dependencies:
-```bash
-pip install -e .  # For development/editable install(For example - if you are constantly modifying the code and do not want to reinstall every time)
-```
-
 To install only domain scanner dependencies:
 ```bash
 pip install -e .[domains]
