@@ -14,6 +14,29 @@ PARSER_REGISTRY = {
 # a) Remote state access
 # b) Running terraform init
 # c) credentials for cloud providers.
+
+
+#Change of plans
+#Experiment with an LLM based scanning using LangChain
+#Data source would be AWS docs, security standards, best practices, tfcheck security yaml etc.
+#RAG would be used to fetch relevant rules, practices for a given IaC file 
+#and chain of that + system prompting + IaC file content to generaty security vulnerabilities
+
+#Do I solve any problem with this?
+#As soon as any of the data source is updated, the LLM might pick it
+
+
+#Downsides with this approach
+#1) LLM's hallucinate, while static checks do not(system prompt can enforce citations)
+#2) LLM's are expensive
+#3) RAG might find contradictory info in the data source
+
+
+
+#Learning Langchain
+#https://python.langchain.com/docs/get_started/introduction
+#https://python.langchain.com/docs/get_started/quickstart
+
 class IaCChecker:
     def __init__(self):
         self.checks = [check_open_ports, check_missing_tags, ...]

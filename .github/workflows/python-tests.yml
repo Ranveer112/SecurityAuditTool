@@ -1,10 +1,14 @@
-name: Python Tests
+name: Python Tests and Release
 
 on:
   push:
     branches: [ "*" ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ "*" ]
+
+permissions:
+  contents: write
 
 jobs:
   test:
@@ -24,9 +28,46 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e .
-        pip install pytest
+        pip install -e .[domains]
+        pip install -e .[iac]
+        pip install pytest pyinstaller
     
     - name: Run tests
       run: |
         python -m pytest tests/ -v
+
+    - name: Build domain-scan executable
+      run: |
+        pyinstaller --onefile --distpath dist --name domain-scan src/domains_scanner/scan.py
+
+    - name: Build iacs-scan executable
+      run: |
+        pyinstaller --onefile --distpath dist --name iacs-scan src/iacs_scanner/infra_security_scan.py
+
+    - name: Upload executables as workflow artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-scanner-executables
+        path: |
+          dist/domain-scan*
+          dist/iacs-scan*
+
+  release:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download executables from test job
+        uses: actions/download-artifact@v4
+        with:
+          name: security-scanner-executables
+          path: dist/
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/domain-scan*
+            dist/iacs-scan*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
