@@ -7,9 +7,6 @@ import os
 from utils.context_logger import ContextLoggerAdapter
 import logging
 
-from dotenv import load_dotenv
-load_dotenv()
-
 def find_terraform_vulnerabilities(iac_content: str, logger: logging.Logger) -> dict|None:
     try:
         llm = ChatGroq(
