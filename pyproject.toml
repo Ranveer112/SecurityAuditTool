@@ -27,7 +27,10 @@ domains = [
 
 # IAC Scanner specific dependencies
 iac = [
-
+    "langchain_groq",
+    "langchain_core",
+    "langchain_openai",
+    "langchain_openai"
 ]
 
 # API specific dependencies
@@ -42,5 +45,4 @@ where = ["src"]
 [project.scripts]
 domains-scanner = "domains_scanner.scan:main"
 iac-scanner = "iacs_scanner.infra_security_scan:main"
-
 

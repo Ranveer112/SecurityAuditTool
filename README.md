@@ -34,7 +34,7 @@ Or on Windows:
 ```powershell
 $env:MAXMIND_LICENSE_KEY="your_key_here"
 ```
-Use the bundled executable built via PyInstaller(available within `dist` directory:
+Use the bundled executable built via PyInstaller(available in the release):
 
 ```bash
 ./dist/domain-scan input_file.txt output_file.txt --output-log log.txt --log-level {DEBUG, INFO, WARNING, ERROR, CRITICAL}
@@ -44,10 +44,25 @@ Use the bundled executable built via PyInstaller(available within `dist` directo
 
 #### For Infrastructure-as-Code Scanning:
 
-Use the bundled executable built via PyInstaller(available within `dist` directory:
+Set the Groq model name, temperature and API key via environment variables.
 
 ```bash
-./dist/iacs-scan iac_file.tf output_file.txt
+export GROQ_MODEL_NAME="llama-3-70b-8192"
+export GROQ_TEMPERATURE="0.2"
+export GROQ_API_KEY="your_groq_api_key"
+```
+
+Or on Windows:
+
+```powershell
+$env:GROQ_MODEL_NAME="llama-3-70b-8192"
+$env:GROQ_TEMPERATURE="0.2"
+$env:GROQ_API_KEY="your_groq_api_key"
+```
+Use the bundled executable built via PyInstaller(available in the release):
+
+```bash
+./dist/iacs-scan iac_file.tf output_file.txt --infra-file-type terraform
 
 ``` 
 > The executable should be self-contained and portable for Unix based systems.
@@ -91,6 +106,23 @@ $env:MAXMIND_LICENSE_KEY="your_key_here"
 
 ---
 
+#### 4. Groq Setup(For Infrastructure-as-Code Scanner)
+
+Set the Groq model name, temperature and API key via environment variables.
+
+```bash
+export GROQ_MODEL_NAME="llama-3-70b-8192"
+export GROQ_TEMPERATURE="0.2"
+export GROQ_API_KEY="your_groq_api_key"
+```
+
+Or on Windows:
+
+```powershell
+$env:GROQ_MODEL_NAME="llama-3-70b-8192"
+$env:GROQ_TEMPERATURE="0.2"
+$env:GROQ_API_KEY="your_groq_api_key"
+```
 
 ## Usage
 
@@ -98,19 +130,19 @@ $env:MAXMIND_LICENSE_KEY="your_key_here"
 
 Output-log flag is optional, however, if passed, the log level flag can be used to control the log level. If log level is not passed, INFO will be used by default.
 
-#### 🔹 CLI (via Python)
+#### CLI (via Python)
 
 ```bash
 python src/domains_scanner/scan.py input_file.txt output_file.txt --output-log log.txt --log-level {DEBUG, INFO, WARNING, ERROR, CRITICAL}
 ```
 
-#### 🔹 CLI (via PyInstaller binary)
+#### CLI (via PyInstaller binary)
 
 ```bash
 ./dist/domain-scan input_file.txt output_file.txt --output-log log.txt --log-level {DEBUG, INFO, WARNING, ERROR, CRITICAL}
 ```
 
-#### 🔹 Server API
+#### Server API
 
 There is also a FastAPI server that exposes a `/audit` POST API for domain scanning, that you can choose to run. To run that server, first install the dependencies:
 
@@ -136,17 +168,25 @@ curl -X POST "http://localhost:8000/audit" \
 ```
 ### Infrastructure-as-Code Scanning
 
-#### 🔹 CLI (via Python)
+You must also specify the file type:
 
 ```bash
-python src/iacs_scanner/infra_security_scan.py iac_file.tf output_file.txt
+python src/iacs_scanner/infra_security_scan.py iac_file.tf output_file.txt --infra-file-type terraform --output-log log.txt --log-level {DEBUG, INFO, WARNING, ERROR, CRITICAL}
 ```
 
-#### 🔹 CLI (via PyInstaller binary)
+- `--output-log` (optional): Path to a file where logs will be written.
+- `--log-level` (optional): Logging level. Everything above or equal to the level will be logged. If not specified, ERROR will be used by default.
+
+If log level is not passed, ERROR will be used by default.
+
+#### CLI (via PyInstaller binary)
 
 ```bash
-./dist/iacs-scan iac_file.tf output_file.txt
+./dist/iacs-scan iac_file.tf output_file.txt --infra-file-type terraform --output-log log.txt --log-level {DEBUG, INFO, WARNING, ERROR, CRITICAL}
 ```
+
+- `--output-log` (optional): Path to a file where logs will be written.
+- `--log-level` (optional): Logging level. Everything above or equal to the level will be logged. If not specified, ERROR will be used by default.
 
 ---
 
